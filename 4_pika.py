@@ -9,7 +9,7 @@ def _drop_dublicates(dataframe):
     )
     return dataframe
 
-
+#fkfkfkf fuck up
 def df_to_rows(df):
     rows = []
     for index, row in df.iterrows():
