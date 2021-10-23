@@ -9,7 +9,7 @@ def _drop_dublicates(dataframe):
     )
     return dataframe
 
-#fkfkfkf fuck up
+
 def df_to_rows(df):
     rows = []
     for index, row in df.iterrows():
@@ -43,9 +43,9 @@ def get_only_need_columns(dataframe: pd.DataFrame) -> list:
 
 
 files = [
-    'Ericsson_RRL_Capacity_4pika_w2138_w2139_3peak.xlsx',
-    'Huawei_RRL_Capacity_4pika_pla_w2138_w2139_3peak.xlsx',
-    'NEC_RRL_Capacity_4pika_w2138_w2139_3peak.xlsx'
+    'files/Ericsson_RRL_Capacity_4pika_w2139_w2140_3peak.xlsx',
+    'files/Huawei_RRL_Capacity_4pika_pla_w2139_w2140_3peak.xlsx',
+    'files/NEC_RRL_Capacity_4pika_w2139_w2140_3peak.xlsx'
 ]
 
 start = datetime.datetime.now()
@@ -60,8 +60,17 @@ for file in files:
     result_df.append(dataframe)
     print(f'complete {file}')
 
+
+radiolinks = pd.read_excel('files/Radiolinks.xlsx')
+
 result = pd.concat(result_df)
-result.to_excel('result.xlsx', index=False)
+
+merge_result_and_radiolinks = pd.merge(result, radiolinks[['OriginalDn', 'Channel Spacing']], on='OriginalDn', how='left')
+channel_spacing_column = merge_result_and_radiolinks.columns[-1]
+old_columns = merge_result_and_radiolinks.columns[:-1]
+result_columns = old_columns.insert(7, channel_spacing_column)
+merge_result_and_radiolinks[result_columns].to_excel('result.xlsx', index=False)
+
 end = datetime.datetime.now() - start
 print(f'done!')
 print(end)
