@@ -1,4 +1,4 @@
-from module.functions import get_all_tasks_from_excel, \
+from module.rrl_functions import get_all_tasks_from_excel, \
     get_supported_tasks, \
     get_finished_tasks, \
     stylize_and_write, \
