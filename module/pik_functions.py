@@ -71,13 +71,18 @@ def add_week_and_extension(dataframe):
     for index, row in dataframe.iterrows():
         data_support_row = dict(zip(dataframe.columns, row))
         for k, v in deepcopy(data_support_row).items():
-            if k.isdigit():
+            if k.isdigit() and '%' in v:
                 if float(v.replace('%', '')) >= 70:
                     data_support_row['Week'] = k
                     if float(data_support_row['Channel Spacing']) in [28.0]:
                         data_support_row['Extension'] = 'SW'
-                    elif float(data_support_row['Channel Spacing']) in [56.0, 112.0]:
+                    elif float(data_support_row['Channel Spacing']) in [56.0] \
+                            and data_support_row['FULL_CAPACITY'] <= 400:
+                        data_support_row['Extension'] = 'SW'
+                    elif float(data_support_row['Channel Spacing']) in [56.0, 112.0] \
+                            and data_support_row['FULL_CAPACITY'] > 400:
                         data_support_row['Extension'] = 'HW'
+                    break
 
         result.append(data_support_row)
     result = pd.DataFrame(result)
