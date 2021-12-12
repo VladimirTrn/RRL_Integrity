@@ -77,10 +77,10 @@ def add_week_and_extension(dataframe):
                     if float(data_support_row['Channel Spacing']) in [28.0]:
                         data_support_row['Extension'] = 'SW'
                     elif float(data_support_row['Channel Spacing']) in [56.0] \
-                            and data_support_row['FULL_CAPACITY'] <= 400:
+                            and data_support_row['FULL_CAPACITY'] <= 370:
                         data_support_row['Extension'] = 'SW'
                     elif float(data_support_row['Channel Spacing']) in [56.0, 112.0] \
-                            and data_support_row['FULL_CAPACITY'] > 400:
+                            and data_support_row['FULL_CAPACITY'] > 370:
                         data_support_row['Extension'] = 'HW'
                     break
 
