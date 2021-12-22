@@ -1,5 +1,6 @@
 from copy import deepcopy
 import pandas as pd
+from sqlalchemy import create_engine
 
 
 def _drop_dublicates(dataframe):
@@ -90,3 +91,41 @@ def add_week_and_extension(dataframe):
     columns.insert(8, 'Week')
     columns.insert(9, 'Extension')
     return result[columns]
+
+
+def summary_for_extension(week_and_extension_dataframe):
+    SQL_QUERY = """
+SELECT  u.MacroRegion, 
+        u.RCode2, 
+        u.Week,
+        u2.cnt,
+        u3.cnt,
+        COUNT(u.Extension)
+    FROM tempdb u LEFT JOIN  
+        (SELECT MacroRegion, RCode2, Week, COUNT(Extension) as cnt
+         FROM tempdb
+         WHERE Week IS NOT NULL 
+         AND Extension = 'HW'
+         GROUP BY MacroRegion, RCode2, Week) as u2
+    ON u.MacroRegion = u2.MacroRegion
+    AND u.RCode2 = u2.RCode2
+    AND u.Week = u2.Week
+    LEFT JOIN
+        (SELECT MacroRegion, RCode2, Week, COUNT(Extension) as cnt
+         FROM tempdb 
+         WHERE Week IS NOT NULL 
+         AND Extension = 'SW'
+         GROUP BY MacroRegion, RCode2, Week) as u3
+    ON u2.MacroRegion = u3.MacroRegion
+    AND u2.RCode2 = u3.RCode2
+    AND u2.Week = u3.Week
+    WHERE u.Week IS NOT NULL 
+    AND u.Extension IS NOT NULL 
+    GROUP BY u.MacroRegion, u.RCode2, u.Week
+    ORDER BY u.MacroRegion
+"""
+    engine = create_engine('sqlite://', echo=False)
+    with engine.begin() as connection:
+        week_and_extension_dataframe.to_sql('tempdb', con=connection)
+        rows = engine.execute(SQL_QUERY).fetchall()
+        return pd.DataFrame(rows, columns=['MacroRegion', 'RCode2', 'Week', 'HW', 'SW', 'HW_SW'])
