@@ -56,15 +56,20 @@ def create_base_df(files):
     return pd.concat(result_df)
 
 
-def add_channel_spacing(radiolinks: pd.DataFrame, basedf: pd.DataFrame):
+def add_channel_spacing(radiolinks: pd.DataFrame, basedf: pd.DataFrame, rrliface_speed: pd.DataFrame):
     merge_result_and_radiolinks = pd.merge(basedf,
-                                           radiolinks[['OriginalDn', 'Channel Spacing']],
+                                           radiolinks[['OriginalDn', 'Channel Spacing', 'Map Length']],
                                            on='OriginalDn',
                                            how='left')
-    channel_spacing_column = merge_result_and_radiolinks.columns[-1]
-    old_columns = merge_result_and_radiolinks.columns[:-1]
+
+    merge_result_and_radiolinks_with_rrliface_speed = pd.merge(merge_result_and_radiolinks,
+                                                               rrliface_speed[['OriginalDn', 'RRLIFACE_SPEED']],
+                                                               on='OriginalDn',
+                                                               how='left')
+    channel_spacing_column = merge_result_and_radiolinks_with_rrliface_speed.columns[-1]
+    old_columns = merge_result_and_radiolinks_with_rrliface_speed.columns[:-1]
     result_columns = old_columns.insert(7, channel_spacing_column)
-    return merge_result_and_radiolinks[result_columns]
+    return merge_result_and_radiolinks_with_rrliface_speed[result_columns]
 
 
 def add_week_and_extension(dataframe):
@@ -73,15 +78,15 @@ def add_week_and_extension(dataframe):
         data_support_row = dict(zip(dataframe.columns, row))
         for k, v in deepcopy(data_support_row).items():
             if k.isdigit() and '%' in v:
-                if float(v.replace('%', '')) >= 70:
+                if float(v.replace('%', '')) >= 60:
                     data_support_row['Week'] = k
-                    if float(data_support_row['Channel Spacing']) in [28.0]:
+                    if float(data_support_row['Channel Spacing']) in [28.0, 40.0]:
                         data_support_row['Extension'] = 'SW'
                     elif float(data_support_row['Channel Spacing']) in [56.0] \
-                            and data_support_row['FULL_CAPACITY'] <= 370:
+                            and data_support_row['FULL_CAPACITY'] <= 340:
                         data_support_row['Extension'] = 'SW'
                     elif float(data_support_row['Channel Spacing']) in [56.0, 112.0] \
-                            and data_support_row['FULL_CAPACITY'] > 370:
+                            and data_support_row['FULL_CAPACITY'] > 340:
                         data_support_row['Extension'] = 'HW'
                     break
 
