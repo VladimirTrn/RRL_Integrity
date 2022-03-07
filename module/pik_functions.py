@@ -66,10 +66,25 @@ def add_channel_spacing(radiolinks: pd.DataFrame, basedf: pd.DataFrame, rrliface
                                                                rrliface_speed[['OriginalDn', 'RRLIFACE_SPEED']],
                                                                on='OriginalDn',
                                                                how='left')
-    channel_spacing_column = merge_result_and_radiolinks_with_rrliface_speed.columns[-1]
-    old_columns = merge_result_and_radiolinks_with_rrliface_speed.columns[:-1]
-    result_columns = old_columns.insert(7, channel_spacing_column)
-    return merge_result_and_radiolinks_with_rrliface_speed[result_columns]
+    columns = ['MacroRegion',
+               'RCode2',
+               'OriginalDn',
+               'Оборудование',
+               'RRL_NAME',
+               'FULL_CAPACITY',
+               'NUMBER OF E1s',
+               'RRLIFACE_SPEED',
+               'flag',
+               'Channel Spacing',
+               'Map Length',
+               ]
+
+    week_columns = sorted([_ for _ in merge_result_and_radiolinks_with_rrliface_speed.columns if str(_).isdigit()])
+
+    columns.extend(week_columns)
+
+    return merge_result_and_radiolinks_with_rrliface_speed[columns]
+
 
 
 def add_week_and_extension(dataframe):
@@ -78,7 +93,7 @@ def add_week_and_extension(dataframe):
         data_support_row = dict(zip(dataframe.columns, row))
         for k, v in deepcopy(data_support_row).items():
             if k.isdigit() and '%' in v:
-                if float(v.replace('%', '')) >= 60:
+                if float(v.replace('%', '')) >= 65:
                     data_support_row['Week'] = k
                     if float(data_support_row['Channel Spacing']) in [28.0, 40.0]:
                         data_support_row['Extension'] = 'SW'
