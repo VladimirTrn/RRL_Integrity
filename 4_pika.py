@@ -1,4 +1,5 @@
-from module.pik_functions import create_base_df, add_channel_spacing, add_week_and_extension, summary_for_extension
+from module.pik_functions import create_base_df, add_channel_spacing, add_week_and_extension, summary_for_extension, \
+    df_type_identification
 import pandas as pd
 import pathlib
 import datetime
@@ -12,11 +13,12 @@ start = datetime.datetime.now()
 
 print(start)
 
-radiolinks = pd.read_excel('files/Radiolinks.xlsx')
 basedf = create_base_df(files)
-rrliface_speed = pd.read_excel('files/RRL_integrity_w2208.xlsx', sheet_name='Detail_Data')
-df_with_channel_spacing = add_channel_spacing(radiolinks, basedf, rrliface_speed)
-week_and_extension = add_week_and_extension(df_with_channel_spacing)
+radiolinks = pd.read_excel('files/Radiolinks.xlsx')
+df_with_channel_spacing = add_channel_spacing(radiolinks, basedf)
+df_with_type_identification = df_type_identification(df_with_channel_spacing)
+df_with_type_identification.to_excel('result_with_types.xlsx', index=False)
+week_and_extension = add_week_and_extension(df_with_type_identification)
 week_and_extension.to_excel('result2.xlsx', index=False)
 summary = summary_for_extension(week_and_extension)
 summary.to_excel('summary.xlsx', index=False)
