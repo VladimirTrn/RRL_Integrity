@@ -45,7 +45,6 @@ def get_only_need_columns(dataframe: pd.DataFrame) -> list:
 
 
 def create_base_df(files):
-    # TODO сделать если FULL_CAPACITY == None or 0 то брать значение из CAPACITY
     result_df = []
     for file in files:
         dataframe = pd.read_excel(file)
@@ -55,20 +54,17 @@ def create_base_df(files):
         dataframe = pd.DataFrame(df_to_rows(dataframe))
         result_df.append(dataframe)
         print(f'complete {file}')
-    # TODO удалить CAPACITY
     return pd.concat(result_df)
 
 
 def add_channel_spacing(radiolinks: pd.DataFrame, basedf: pd.DataFrame):
-    # TODO: Проверить колонки Channel Spacing или freq?
     merge_result_and_radiolinks = pd.merge(basedf,
                                            radiolinks[
                                                ['OriginalDn',
-                                                'Channel Spacing',
+                                                'Base TX Frequency',
                                                 'xpiccalculated',
-                                                'freq',
-                                                'map length',
-                                                'status',
+                                                'Map Length',
+                                                'Существующее состояние',
                                                 ]],
                                            on='OriginalDn',
                                            how='left')
@@ -80,20 +76,26 @@ def add_channel_spacing(radiolinks: pd.DataFrame, basedf: pd.DataFrame):
 
 def df_type_identification(dataframe):
     temp = []
-    # TODO: Проверить колонки
-    for index, row in dataframe.iterrows():
+    for index, row in deepcopy(dataframe).iterrows():
         data_row = dict(zip(dataframe.columns, row))
-        if data_row['FULL_CAPAСITY'] <= 495 and data_row['XPIC'] is None and data_row['Freq'] < 70000:
+
+        # Сделал здесь FULL_CAPACITY == None or 0 то брать значение из CAPACITY
+        if str(data_row['FULL_CAPACITY']) == 'nan' or data_row['FULL_CAPACITY'] == 0:
+            data_row['FULL_CAPACITY'] = data_row['CAPACITY']
+
+        if data_row['FULL_CAPACITY'] <= 495 and str(data_row['xpiccalculated']) == 'nan' and data_row['Base TX Frequency'] < 70000:
             data_row['Type'] = '1+0'
-        elif data_row['XPIC']:
+        elif str(data_row['xpiccalculated']) != 'nan':
             data_row['Type'] = 'XPIC/2+0'
-        elif data_row['Freq'] >= 70000:
+        elif data_row['Base TX Frequency'] >= 70000:
             data_row['Type'] = 'E-band'
         else:
             data_row['Type'] = 'None'
         temp.append(data_row)
     result = pd.DataFrame(temp)
-    return result
+    # А здесь удалил колонку CAPACITY
+    columns = [_ for _ in result.columns if _ != 'CAPACITY']
+    return result[columns]
 
 
 def add_week_and_extension(dataframe):
@@ -109,34 +111,42 @@ def add_week_and_extension(dataframe):
                 if k.isdigit() and '%' in v:
                     if float(v.replace('%', '')) >= 70:
                         data_support_row['Week'] = k
+                        E1 = temp_row['NUMBER OF E1s'] if str(temp_row['NUMBER OF E1s']) != 'nan' else 0
+                        formula = (float(temp_row[k]) * 100 / 60) + E1*2
                         if data_support_row['Type'] == '1+0':
-                            if (float(temp_row[k]) * 100 / 60) + temp_row['NUMBER OF E1s'] < 350:
+                            if formula < 350:
                                 data_support_row['Extension'] = 'SW'
-                            elif (float(temp_row[k]) * 100 / 60) + temp_row['NUMBER OF E1s'] >= 350 \
-                                    and temp_row['map length'] <= 3500:
+                            elif formula >= 350 \
+                                    and temp_row['Map Length'] <= 3500:
                                 data_support_row['Extension'] = 'HW(Eband)'
                             else:
                                 data_support_row['Extension'] = 'HW'
                         elif data_support_row['Type'] == 'XPIC/2+0':
-                            if (float(temp_row[k]) * 100 / 60) + temp_row['NUMBER OF E1s'] < 750:
+                            if formula < 750:
                                 data_support_row['Extension'] = 'SW'
-                            elif (float(temp_row[k]) * 100 / 60) + temp_row['NUMBER OF E1s'] >= 750 \
-                                    and temp_row['map length'] <= 3500:
+                            elif formula >= 750 \
+                                    and temp_row['Map Length'] <= 3500:
                                 data_support_row['Extension'] = 'HW(Eband)'
+                            elif formula >= 750 \
+                                    and temp_row['Map Length'] >= 3500:
+                                data_support_row['Extension'] = 'HWXPIC/rerout'
                             else:
                                 data_support_row['Extension'] = 'SW'
                         elif data_support_row['Type'] == 'E-band':
                             data_support_row['Extension'] = 'SW'
                         elif data_support_row['Type'] == 'None':
-                            # TODO: Что сюда писать если тип None
-                            data_support_row['Extension'] = 'ХУЙ ЗНАЕТ'
+                            data_support_row['Extension'] = 'WTF'
                         break
 
         result.append(data_support_row)
     result = pd.DataFrame(result)
-    columns = list(result.columns[:-2])
+    columns = list(result.columns[:-6])
     columns.insert(8, 'Week')
     columns.insert(9, 'Extension')
+    columns.insert(10, 'Base TX Frequency')
+    columns.insert(11, 'xpiccalculated')
+    columns.insert(12, 'Map Length')
+    columns.insert(13, 'Type')
     return result[columns]
 
 
