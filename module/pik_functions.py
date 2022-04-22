@@ -105,6 +105,7 @@ def add_week_and_extension(dataframe):
         data_support_row = dict(zip(dataframe.columns, row))
         if data_support_row['flag'] == '01 Traffic':
             temp_row = data_support_row
+            result.append(data_support_row)
             continue
         else:
             for k, v in deepcopy(data_support_row).items():
