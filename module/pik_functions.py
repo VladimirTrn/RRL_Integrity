@@ -1,6 +1,13 @@
 from copy import deepcopy
 import pandas as pd
 from sqlalchemy import create_engine
+import logging
+
+logging.basicConfig(level=logging.INFO,
+                    # filename='app.log',
+                    # filemode='w',
+                    format='%(name)s - %(levelname)s - %(message)s')
+
 
 
 def _drop_dublicates(dataframe):
@@ -46,6 +53,7 @@ def get_only_need_columns(dataframe: pd.DataFrame) -> list:
 
 def create_base_df(files):
     result_df = []
+    logging.info(f'Объединяем файлы:')
     for file in files:
         dataframe = pd.read_excel(file)
         columns = get_only_need_columns(dataframe)
@@ -53,11 +61,12 @@ def create_base_df(files):
         dataframe = dataframe.rename(columns={'E1': 'NUMBER OF E1s'})
         dataframe = pd.DataFrame(df_to_rows(dataframe))
         result_df.append(dataframe)
-        print(f'complete {file}')
+        logging.info(f'complete {file}')
     return pd.concat(result_df)
 
 
 def add_channel_spacing(radiolinks: pd.DataFrame, basedf: pd.DataFrame):
+    logging.info(f'Добавляем данные из radiolinks...')
     merge_result_and_radiolinks = pd.merge(basedf,
                                            radiolinks[
                                                ['OriginalDn',
@@ -75,6 +84,7 @@ def add_channel_spacing(radiolinks: pd.DataFrame, basedf: pd.DataFrame):
 
 
 def df_type_identification(dataframe):
+    logging.info(f'Определяем тип пролета...')
     temp = []
     for index, row in deepcopy(dataframe).iterrows():
         data_row = dict(zip(dataframe.columns, row))
@@ -83,7 +93,8 @@ def df_type_identification(dataframe):
         if str(data_row['FULL_CAPACITY']) == 'nan' or data_row['FULL_CAPACITY'] == 0:
             data_row['FULL_CAPACITY'] = data_row['CAPACITY']
 
-        if data_row['FULL_CAPACITY'] <= 495 and str(data_row['xpiccalculated']) == 'nan' and data_row['Base TX Frequency'] < 70000:
+        if data_row['FULL_CAPACITY'] <= 495 and str(data_row['xpiccalculated']) == 'nan' and data_row[
+            'Base TX Frequency'] < 70000:
             data_row['Type'] = '1+0'
         elif str(data_row['xpiccalculated']) != 'nan':
             data_row['Type'] = 'XPIC/2+0'
@@ -91,6 +102,10 @@ def df_type_identification(dataframe):
             data_row['Type'] = 'E-band'
         else:
             data_row['Type'] = 'None'
+
+        logging.debug(f'Type = {data_row["Type"]}')
+        logging.debug(data_row)
+
         temp.append(data_row)
     result = pd.DataFrame(temp)
     # А здесь удалил колонку CAPACITY
@@ -99,6 +114,7 @@ def df_type_identification(dataframe):
 
 
 def add_week_and_extension(dataframe):
+    logging.info(f'Определяем неделю и расширение...')
     result = []
     temp_row = None
     for index, row in dataframe.iterrows():
@@ -113,7 +129,7 @@ def add_week_and_extension(dataframe):
                     if float(v.replace('%', '')) >= 70:
                         data_support_row['Week'] = k
                         E1 = temp_row['NUMBER OF E1s'] if str(temp_row['NUMBER OF E1s']) != 'nan' else 0
-                        formula = (float(temp_row[k]) * 100 / 60) + E1*2
+                        formula = (float(temp_row[k]) * 100 / 60) + E1 * 2
                         if data_support_row['Type'] == '1+0':
                             if formula < 350:
                                 data_support_row['Extension'] = 'SW'
@@ -137,6 +153,9 @@ def add_week_and_extension(dataframe):
                             data_support_row['Extension'] = 'SW'
                         elif data_support_row['Type'] == 'None':
                             data_support_row['Extension'] = 'WTF'
+                        logging.debug(f"Extension = {data_support_row['Extension']}")
+                        logging.debug(temp_row)
+                        logging.debug(data_support_row)
                         break
 
         result.append(data_support_row)
