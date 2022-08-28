@@ -9,7 +9,6 @@ logging.basicConfig(level=logging.INFO,
                     format='%(name)s - %(levelname)s - %(message)s')
 
 
-
 def _drop_dublicates(dataframe):
     dataframe = dataframe.drop_duplicates(
         subset=['OriginalDn', 'flag'],
@@ -168,6 +167,20 @@ def add_week_and_extension(dataframe):
     columns.insert(12, 'Map Length')
     columns.insert(13, 'Type')
     return result[columns]
+
+
+def extension_for_hw_plan(week_and_extension_dataframe):
+    SQL_QUERY = """
+    SELECT RCode2 as region, count(Extension) as HW_Plan
+    FROM tempdb
+    WHERE Extension IN ('HW(Eband)', 'HW', 'WTF', 'HWXPIC/rerout')
+    GROUP BY RCode2
+    """
+    engine = create_engine('sqlite://', echo=False)
+    with engine.begin() as connection:
+        week_and_extension_dataframe.to_sql('tempdb', con=connection)
+        rows = engine.execute(SQL_QUERY).fetchall()
+        return pd.DataFrame(rows, columns=['region', 'HW Plan'])
 
 
 def summary_for_extension(week_and_extension_dataframe):
