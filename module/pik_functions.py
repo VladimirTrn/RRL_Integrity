@@ -1,6 +1,15 @@
 from copy import deepcopy
 import pandas as pd
 from sqlalchemy import create_engine
+import logging
+import os
+import patoolib
+import pyodbc
+
+logging.basicConfig(level=logging.INFO,
+                    # filename='app.log',
+                    # filemode='w',
+                    format='%(name)s - %(levelname)s - %(message)s')
 
 
 def _drop_dublicates(dataframe):
@@ -36,6 +45,7 @@ def get_only_need_columns(dataframe: pd.DataFrame) -> list:
                    'RRL_NAME',
                    'Оборудование',
                    'FULL_CAPACITY',
+                   'CAPACITY',
                    'NUMBER OF E1s',
                    'E1',
                    'flag'] or col.isdigit():
@@ -45,6 +55,7 @@ def get_only_need_columns(dataframe: pd.DataFrame) -> list:
 
 def create_base_df(files):
     result_df = []
+    logging.info(f'Объединяем файлы:')
     for file in files:
         dataframe = pd.read_excel(file)
         columns = get_only_need_columns(dataframe)
@@ -52,65 +63,129 @@ def create_base_df(files):
         dataframe = dataframe.rename(columns={'E1': 'NUMBER OF E1s'})
         dataframe = pd.DataFrame(df_to_rows(dataframe))
         result_df.append(dataframe)
-        print(f'complete {file}')
+        logging.info(f'complete {file}')
     return pd.concat(result_df)
 
 
-def add_channel_spacing(radiolinks: pd.DataFrame, basedf: pd.DataFrame, rrliface_speed: pd.DataFrame):
+def add_channel_spacing(radiolinks: pd.DataFrame, basedf: pd.DataFrame):
+    logging.info(f'Добавляем данные из radiolinks...')
+    # columns = ['OriginalDn',
+    #            'Base TX Frequency',
+    #            'xpiccalculated',
+    #            'Map Length',
+    #            'Existencestate',
+    #            ]
+    columns = ['OriginalDn',
+               'Base TX Frequency',
+               'xpiccalculated',
+               'Map Length',
+               'Существующее состояние',
+               ]
     merge_result_and_radiolinks = pd.merge(basedf,
-                                           radiolinks[['OriginalDn', 'Channel Spacing', 'Map Length']],
+                                           radiolinks[columns],
                                            on='OriginalDn',
                                            how='left')
+    channel_spacing_column = merge_result_and_radiolinks.columns[-1]
+    old_columns = merge_result_and_radiolinks.columns[:-1]
+    result_columns = old_columns.insert(7, channel_spacing_column)
+    return merge_result_and_radiolinks[result_columns]
 
-    merge_result_and_radiolinks_with_rrliface_speed = pd.merge(merge_result_and_radiolinks,
-                                                               rrliface_speed[['OriginalDn', 'RRLIFACE_SPEED']],
-                                                               on='OriginalDn',
-                                                               how='left')
-    columns = ['MacroRegion',
-               'RCode2',
-               'OriginalDn',
-               'Оборудование',
-               'RRL_NAME',
-               'FULL_CAPACITY',
-               'NUMBER OF E1s',
-               'RRLIFACE_SPEED',
-               'flag',
-               'Channel Spacing',
-               'Map Length',
-               ]
 
-    week_columns = sorted([_ for _ in merge_result_and_radiolinks_with_rrliface_speed.columns if str(_).isdigit()])
+def df_type_identification(dataframe):
+    logging.info(f'Определяем тип пролета...')
+    temp = []
+    for index, row in deepcopy(dataframe).iterrows():
+        data_row = dict(zip(dataframe.columns, row))
 
-    columns.extend(week_columns)
+        if str(data_row['FULL_CAPACITY']) == 'nan' or data_row['FULL_CAPACITY'] == 0:
+            data_row['FULL_CAPACITY'] = data_row['CAPACITY']
 
-    return merge_result_and_radiolinks_with_rrliface_speed[columns]
+        if data_row['FULL_CAPACITY'] <= 495 and str(data_row['xpiccalculated']) == 'nan' and data_row[
+            'Base TX Frequency'] < 70000:
+            data_row['Type'] = '1+0'
+        elif str(data_row['xpiccalculated']) != 'nan':
+            data_row['Type'] = 'XPIC/2+0'
+        elif data_row['Base TX Frequency'] >= 70000:
+            data_row['Type'] = 'E-band'
+        else:
+            data_row['Type'] = 'None'
 
+        logging.debug(f'Type = {data_row["Type"]}')
+        logging.debug(data_row)
+
+        temp.append(data_row)
+    result = pd.DataFrame(temp)
+    columns = [_ for _ in result.columns if _ != 'CAPACITY']
+    c = columns[-4:]
+    columns = columns[:8] + c + columns[8:-4]
+    return result[columns]
 
 
 def add_week_and_extension(dataframe):
+    logging.info(f'Определяем неделю и расширение...')
     result = []
+    temp_row = None
     for index, row in dataframe.iterrows():
         data_support_row = dict(zip(dataframe.columns, row))
-        for k, v in deepcopy(data_support_row).items():
-            if k.isdigit() and '%' in v:
-                if float(v.replace('%', '')) >= 65:
-                    data_support_row['Week'] = k
-                    if float(data_support_row['Channel Spacing']) in [28.0, 40.0]:
-                        data_support_row['Extension'] = 'SW'
-                    elif float(data_support_row['Channel Spacing']) in [56.0] \
-                            and data_support_row['FULL_CAPACITY'] <= 340:
-                        data_support_row['Extension'] = 'SW'
-                    elif float(data_support_row['Channel Spacing']) in [56.0, 112.0] \
-                            and data_support_row['FULL_CAPACITY'] > 340:
-                        data_support_row['Extension'] = 'HW'
-                    break
+        if data_support_row['flag'] == '01 Traffic':
+            temp_row = data_support_row
+            result.append(data_support_row)
+            continue
+        else:
+            for k, v in deepcopy(data_support_row).items():
+                if k.isdigit() and '%' in v:
+                    if float(v.replace('%', '')) >= 70:
+                        data_support_row['Week'] = k
+                        E1 = temp_row['NUMBER OF E1s'] if str(temp_row['NUMBER OF E1s']) != 'nan' else 0
+                        formula = (float(temp_row[k]) * 100 / 60) + E1 * 2
+                        if data_support_row['Type'] == '1+0':
+                            if formula < 350:
+                                data_support_row['Extension'] = 'SW'
+                            elif formula >= 350 \
+                                    and temp_row['Map Length'] <= 3500:
+                                data_support_row['Extension'] = 'HW(Eband)'
+                            else:
+                                data_support_row['Extension'] = 'HW'
+                        elif data_support_row['Type'] == 'XPIC/2+0':
+                            if formula < 750:
+                                data_support_row['Extension'] = 'SW'
+                            elif formula >= 750 \
+                                    and temp_row['Map Length'] <= 3500:
+                                data_support_row['Extension'] = 'HW(Eband)'
+                            elif formula >= 750 \
+                                    and temp_row['Map Length'] >= 3500:
+                                data_support_row['Extension'] = 'HWXPIC/rerout'
+                            else:
+                                data_support_row['Extension'] = 'SW'
+                        elif data_support_row['Type'] == 'E-band':
+                            data_support_row['Extension'] = 'SW'
+                        elif data_support_row['Type'] == 'None':
+                            data_support_row['Extension'] = 'WTF'
+                        logging.debug(f"Extension = {data_support_row['Extension']}")
+                        logging.debug(temp_row)
+                        logging.debug(data_support_row)
+                        break
 
         result.append(data_support_row)
     result = pd.DataFrame(result)
-    columns = list(result.columns[:-2])
+    columns = list(result.columns[:-6])
     columns.insert(8, 'Week')
     columns.insert(9, 'Extension')
     return result[columns]
+
+
+def extension_for_hw_plan(week_and_extension_dataframe):
+    SQL_QUERY = """
+    SELECT RCode2 as region, count(Extension) as HW_Plan
+    FROM tempdb
+    WHERE Extension IN ('HW(Eband)', 'HW', 'WTF', 'HWXPIC/rerout')
+    GROUP BY RCode2
+    """
+    engine = create_engine('sqlite://', echo=False)
+    with engine.begin() as connection:
+        week_and_extension_dataframe.to_sql('tempdb', con=connection)
+        rows = engine.execute(SQL_QUERY).fetchall()
+        return pd.DataFrame(rows, columns=['region', 'HW Plan'])
 
 
 def summary_for_extension(week_and_extension_dataframe):
@@ -149,3 +224,100 @@ SELECT  u.MacroRegion,
         week_and_extension_dataframe.to_sql('tempdb', con=connection)
         rows = engine.execute(SQL_QUERY).fetchall()
         return pd.DataFrame(rows, columns=['MacroRegion', 'RCode2', 'Week', 'HW', 'SW', 'HW_SW'])
+
+
+def split_by_years(df_with_type_identification):
+    logging.info('Разбиваем и получаем файлы с неделями по годам.')
+    weeks = []
+    others_columns = []
+    for column in df_with_type_identification.columns:
+        if column.isdigit():
+            weeks.append(column)
+        else:
+            others_columns.append(column)
+
+    years = []
+    temp = []
+    for index in range(len(weeks)):
+        try:
+            week1 = weeks[index][:2]
+            week2 = weeks[index + 1][:2]
+            if week1 == week2:
+                temp.append(weeks[index])
+            else:
+                temp.append(weeks[index])
+                years.append(deepcopy(temp))
+                temp = []
+        except IndexError:
+            temp.append(weeks[index])
+            years.append(deepcopy(temp))
+            temp = []
+
+    result_columns = []
+    for year in years:
+        new_columns = deepcopy(others_columns)
+        new_columns.extend(year)
+        result_columns.append(new_columns)
+
+    return result_columns
+
+
+def get_path_hw(file_name):
+    """ Получение последнего файла с пролетами из папки """
+
+    path_user = "//corp.tele2.ru//cpfolders//STAT.CP.Reports//TCH_for_Transport"
+    list_files_sw = [s for s in os.listdir(path_user)
+                     if os.path.isfile(os.path.join(path_user, s)) and file_name in s]
+    list_files_sw.sort(key=lambda s: os.path.getmtime(os.path.join(path_user, s)))
+    path_file = path_user + "//" + list_files_sw[-1]
+
+    return path_file
+
+
+def unpack_file_any(path):
+    """ Распаковка любого архива """
+
+    dir_out = "L:\Transport_planning\VISIO ЧТП\Access\Operation Group\Отчеты RRL Capacity_4pica\Weekly_RRL_Integrity"
+    patoolib.extract_archive(path,
+                             outdir=dir_out,
+                             interactive=False
+                             )
+
+    return f"{dir_out}\\{path.split('//')[-1].split('.')[0]}.xlsx".replace('//', '\\')
+
+
+# print(unpack_file_any(get_path_hw('Huawei_RRL_Capacity_4pika_pla')))
+
+class ConnectSql:
+    def __init__(self, database=None, request=None):
+        self.connect_db = pyodbc.connect("DRIVER={SQL Server};"
+                                         "SERVER=TIS-SQL-CLU-A.corp.tele2.ru;"
+                                         f"Database={database};"
+                                         "PORT=1433;"
+                                         "UID=accessnetwork;"
+                                         "PWD=xvd5c;"
+                                         )
+        self.request = request
+
+    def get_cursor(self):
+        return self.connect_db.cursor()
+
+    def execute_request(self):
+        return self.get_cursor().execute(self.request)
+
+
+def det_table_sql(str_sql):
+    sql = ConnectSql("Reports", str_sql)
+    df_sql = pd.read_sql(str_sql, sql.connect_db)
+    sql.connect_db.close()
+    return df_sql
+
+# df = det_table_sql(
+#     (
+#         f"SELECT * "
+#         f"FROM [Reports_Tele2].[dbo].[ReportRadiolinks]"
+#     )
+# )
+#
+# df.to_excel('test.xlsx')
+# print(df)
