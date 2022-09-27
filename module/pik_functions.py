@@ -188,14 +188,14 @@ def extension_for_hw_plan(week_and_extension_dataframe):
         return pd.DataFrame(rows, columns=['region', 'HW Plan'])
 
 
-def summary_for_extension(week_and_extension_dataframe):
+def summary_for_extension_HW(week_and_extension_dataframe):
     SQL_QUERY = """
 SELECT  u.MacroRegion, 
         u.RCode2, 
         u.Week,
-        u2.cnt,
-        u3.cnt,
-        COUNT(u.Extension)
+        u2.cnt
+        -- u3.cnt,
+        -- COUNT(u.Extension)
     FROM tempdb u LEFT JOIN  
         (SELECT MacroRegion, RCode2, Week, COUNT(Extension) as cnt
          FROM tempdb
@@ -223,8 +223,54 @@ SELECT  u.MacroRegion,
     with engine.begin() as connection:
         week_and_extension_dataframe.to_sql('tempdb', con=connection)
         rows = engine.execute(SQL_QUERY).fetchall()
-        return pd.DataFrame(rows, columns=['MacroRegion', 'RCode2', 'Week', 'HW', 'SW', 'HW_SW'])
+        # return pd.DataFrame(rows, columns=['MacroRegion', 'RCode2', 'Week', 'HW', 'SW', 'HW_SW'])
+        return pd.DataFrame(rows, columns=['MacroRegion', 'RCode2', 'Week', 'HW'])
 
+
+
+
+def summary_for_extension_SW(week_and_extension_dataframe):
+    SQL_QUERY = """
+SELECT  u.MacroRegion, 
+        u.RCode2, 
+        u.Week,
+        u2.cnt
+        -- u3.cnt,
+        -- COUNT(u.Extension)
+    FROM tempdb u LEFT JOIN  
+        (SELECT MacroRegion, RCode2, Week, COUNT(Extension) as cnt
+         FROM tempdb
+         WHERE Week IS NOT NULL 
+         AND Extension = 'SW'
+         GROUP BY MacroRegion, RCode2, Week) as u2
+    ON u.MacroRegion = u2.MacroRegion
+    AND u.RCode2 = u2.RCode2
+    AND u.Week = u2.Week
+    LEFT JOIN
+        (SELECT MacroRegion, RCode2, Week, COUNT(Extension) as cnt
+         FROM tempdb 
+         WHERE Week IS NOT NULL 
+         AND Extension = 'HW'
+         GROUP BY MacroRegion, RCode2, Week) as u3
+    ON u2.MacroRegion = u3.MacroRegion
+    AND u2.RCode2 = u3.RCode2
+    AND u2.Week = u3.Week
+    WHERE u.Week IS NOT NULL 
+    AND u.Extension IS NOT NULL 
+    GROUP BY u.MacroRegion, u.RCode2, u.Week
+    ORDER BY u.MacroRegion
+"""
+    engine = create_engine('sqlite://', echo=False)
+    with engine.begin() as connection:
+        week_and_extension_dataframe.to_sql('tempdb', con=connection)
+        rows = engine.execute(SQL_QUERY).fetchall()
+        return pd.DataFrame(rows, columns=['MacroRegion', 'RCode2', 'Week', 'SW'])
+
+def set_hw_for_all_hw_extension(week_and_extension):
+    week_and_extension.loc[week_and_extension['Extension'] == 'WTF', 'Extension'] = 'HW'
+    week_and_extension.loc[week_and_extension['Extension'] == 'HWXPIC/rerout', 'Extension'] = 'HW'
+    week_and_extension.loc[week_and_extension['Extension'] == 'HW(Eband)', 'Extension'] = 'HW'
+    return week_and_extension
 
 def split_by_years(df_with_type_identification):
     logging.info('Разбиваем и получаем файлы с неделями по годам.')
